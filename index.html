@@ -8,7 +8,6 @@
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     <!-- Paho MQTT JavaScript client -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
-
     <style>
         #eventLog {
             font-family: monospace;
@@ -21,7 +20,7 @@
         <h1>Shadow Service Demo App</h1>
         <div class="row">
             <div class="col">
-                <input type="text" id="broker" class="form-control" value="broker.hivemq.com"
+                <input type="text" id="broker" class="form-control" value="localhost"
                     placeholder="Broker Address">
             </div>
             <div class="col">
@@ -36,30 +35,37 @@
         </div>
 
         <hr>
+
         <div class="row mb-3">
             <div class="col">
-                <input type="text" id="nodeId" class="form-control" placeholder="Node ID">
+                <input type="text" id="tenantId" class="form-control" placeholder="Tenant ID" value="tenant">
             </div>
             <div class="col">
-                <button id="subscribe" class="btn btn-secondary">Subscribe</button>
-                <button id="unsubscribe" class="btn btn-secondary">Unsubscribe</button>
+                <input type="text" id="nodeId" class="form-control" placeholder="Node ID" value="test">
+            </div>
+            <div class="col">
+                <input type="text" id="featureName" class="form-control" placeholder="Feature Name" value="dummy-feature">
             </div>
             <div class="col">
                 <button id="bind" class="btn btn-secondary">Bind</button>
-                <button id="unbind" class="btn btn-secondary">Unbind</button>
             </div>
             <div class="col text-right">
-                <button id="togglePrettyPrint" class="btn btn-secondary">Toggle Pretty Print</button>
+                <button id="togglePrettyPrint" class="btn btn-secondary">Enable Pretty Print</button>
             </div>
         </div>
 
+        <hr>
+
         <div class="row">
             <div class="col pr-3">
+                <h2>Device Features</h2>
                 <table id="dataTable" class="table">
                     <thead>
                         <tr>
-                            <th>Rule ID</th>
-                            <th>Rule state</th>
+                            <th>Name</th>
+                            <th>State</th>
+                            <th>Lease Expiration</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -68,6 +74,7 @@
                 </table>
             </div>
             <div class="col pl-3">
+                <h2>Event Log</h2>
                 <textarea id="eventLog" class="form-control" rows="10" readonly></textarea>
             </div>
         </div>
@@ -75,22 +82,25 @@
 
     <script>
         var client;
-        var rules = {};
+        var expectedResponseHandlers = {};
         var prettyPrintEventLog = false;
 
         document.getElementById('connect').addEventListener('click', connect);
 
         function connect() {
-            console.log("Connecting...");
             var broker = document.getElementById('broker').value;
             var port = Number(document.getElementById('port').value);
+            console.log("Connecting to " + broker + ":" + port + "...");
             // Create a client instance
-            client = new Paho.MQTT.Client(broker, port, "opaleni_event_tester");
+
+            var id = generateUUID();
+
+            client = new Paho.MQTT.Client(broker, port, `opaleni_event_tester_${id}`);
             client.onConnectionLost = onConnectionLost;
             client.onMessageArrived = onMessageArrived;
 
             // Connect the client
-            client.connect({ onSuccess: onConnect, onFailure: onFailure });
+            client.connect({ onSuccess: onConnect, onFailure: onFailure, userName: "admin", password: "rockwell" });
         }
 
         function disconnect() {
@@ -116,10 +126,13 @@
             connectButton.addEventListener('click', disconnect);
             connectButton.classList.remove('btn-primary');
             connectButton.classList.add('btn-danger');
+
+            // Subscribe to the shadow service
+            client.subscribe('cloud2cloud/+/shadow/#');
         }
 
         function onFailure(invocationContext, errorCode, errorMessage) {
-            console.log("onFailure");
+            console.log(`onFailure: {errorCode} - {errorMessage}`);
             document.getElementById('state').textContent = 'Failed to connect: ' + errorMessage;
         }
 
@@ -135,6 +148,8 @@
                 connectButton.addEventListener('click', connect);
                 connectButton.classList.remove('btn-danger');
                 connectButton.classList.add('btn-primary');
+
+                client.unsubscribe('cloud2cloud/+/shadow/#');
             }
         }
 
@@ -144,80 +159,36 @@
             handleIncomingEvent(message);
         }
 
-        document.getElementById('subscribe').addEventListener('click', subscribe);
-        function subscribe() {
-            var nodeId = document.getElementById('nodeId').value;
-            if (!nodeId) {
-                alert('Please enter a node ID');
-                return;
-            }
-
-            var nodeTopic = 'shadow/' + nodeId;
-            client.subscribe(nodeTopic + '/#');
-
-            console.log('Subscribed to: ' + nodeTopic);
-        }
-
-        document.getElementById('unsubscribe').addEventListener('click', unsubscribe);
-        function unsubscribe() {
-            var nodeId = document.getElementById('nodeId').value;
-            if (!nodeId) {
-                alert('Please enter a node ID');
-                return;
-            }
-
-            var nodeTopic = 'shadow/' + nodeId;
-            client.unsubscribe(nodeTopic + '/#');
-
-            console.log('Unsubscribed from: ' + nodeTopic);
-        }
-
         document.getElementById('bind').addEventListener('click', bind);
         function bind() {
+            var tenantId = document.getElementById('tenantId').value;
+            if (!tenantId) {
+                alert('Please enter a tenant ID');
+                return;
+            }
+
             var nodeId = document.getElementById('nodeId').value;
             if (!nodeId) {
                 alert('Please enter a node ID');
+                return;
+            }
+
+            var featureName = document.getElementById('featureName').value;
+            if (!featureName) {
+                alert('Please enter a feature name');
                 return;
             }
 
             var bindPayload = {
-                "originatorAppId": "opaleni_event_tester",
+                "correlationId": generateUUID(),
             };
 
-            var nodeTopic = 'shadow/' + nodeId;
-            publishEvent(nodeTopic + '/bind', JSON.stringify(bindPayload));
+            var cloudEventPayload = wrapInCloudEvent('opaleni_event_tester', bindPayload);
 
-            demoNodeId = nodeId;
-            setInterval(demoRulesEngineUpdate, 3000);
-            var event = {
-                "features": {
-                    "rulesEngine": {
-                        "properties": demoRulesUpdatePayloads
-                    }
-                }
-            };
+            expectedResponseHandlers[bindPayload.correlationId] = onBindRespone;
 
-            client.send('shadow/' + demoNodeId + '/deviceStateChange', JSON.stringify(event));
-        }
-
-        document.getElementById('unbind').addEventListener('click', unbind);
-        function unbind() {
-            var nodeId = document.getElementById('nodeId').value;
-            if (!nodeId) {
-                alert('Please enter a node ID');
-                return;
-            }
-
-            var unbindPayload = {
-                "originatorAppId": "opaleni_event_tester",
-            };
-
-            var nodeTopic = 'shadow/' + nodeId;
-
-            publishEvent(nodeTopic + '/unbind', JSON.stringify(unbindPayload));
-
-            demoNodeId = null;
-            clearInterval(demoRulesEngineUpdate);
+            var bindTopic = `cloud2cloud/${tenantId}/shadow/v0/${nodeId}/${featureName}/commands/bind`;
+            publishEvent(bindTopic, JSON.stringify(cloudEventPayload));
         }
 
         document.getElementById('togglePrettyPrint').addEventListener('click', togglePrettyPrint);
@@ -231,115 +202,145 @@
             var message = new Paho.MQTT.Message(event);
             message.destinationName = topic;
             client.send(message);
-
-            console.log(message.destinationName + ' -> ' + message.payloadString);
-
-            if (prettyPrintEventLog) {
-                var eventPrettyStr = JSON.stringify(JSON.parse(event), null, 2);    
-            } else {
-                var eventPrettyStr = JSON.stringify(event);
-            }
-            
-            console.log(message.destinationName + ' -> ' + event);
-            document.getElementById('eventLog').value += message.destinationName + ' -> ' + eventPrettyStr + '\n';
         }
 
         function handleIncomingEvent(message) {
-            function getRulesEngineProperties(message) {
-                if (message.features && message.features.rulesEngine && message.features.rulesEngine.properties) {
-                    return message.features.rulesEngine.properties;
-                } else {
-                    return null;
-                }
-            }
-
-            console.log(message.destinationName + ' <- ' + message.payloadString);
-
             var event = JSON.parse(message.payloadString);
-            
+
             if (prettyPrintEventLog) {
-                var event_pretty_str = JSON.stringify(event, null, 2);    
+                var event_pretty_str = JSON.stringify(event, null, 2);
             } else {
                 var event_pretty_str = JSON.stringify(event);
             }
 
             var eventLog = document.getElementById('eventLog');
-            eventLog.value += message.destinationName + ' <- ' + event_pretty_str + '\n';
+            eventLog.value += message.destinationName + ' - ' + event_pretty_str + '\n';
             eventLog.scrollTop = eventLog.scrollHeight;
 
-            var rulesEngineProperties = getRulesEngineProperties(event);
-            if (rulesEngineProperties) {
-                handleRulesEngineUpdate(rulesEngineProperties)
+            // Process the incoming event
+            // Match response topic and dispatch to the appropriate handler (using a regex)
+
+            // Match command responses
+            var matches = message.destinationName.match(/cloud2cloud\/([^\/]+)\/shadow\/v0\/([^\/]+)\/([^\/]+)\/responses\/([^\/]+)\/([^\/]+)/);
+            if (matches) {
+                var tenantId = matches[1];
+                var nodeId = matches[2];
+                var featureName = matches[3];
+                var command = matches[4];
+                var correlationId = matches[5];
+
+                if (expectedResponseHandlers[correlationId]) {
+                    expectedResponseHandlers[correlationId](correlationId, event);
+                    delete expectedResponseHandlers[correlationId];
+                }
+            }
+
+            var matches = message.destinationName.match(/cloud2cloud\/([^\/]+)\/shadow\/v0\/([^\/]+)\/([^\/]+)\/events\/([^\/]+)/);
+            if (matches) {
+                var tenantId = matches[1];
+                var nodeId = matches[2];
+                var featureName = matches[3];
+                var eventType = matches[4];
+
+                if (eventType === 'bound') {
+                    onBoundEvent(tenantId, nodeId, featureName, event);
+                } else if (eventType === 'unbound') {
+                    onUnboundEvent(tenantId, nodeId, featureName, event);
+                }
             }
         }
 
-        function handleRulesEngineUpdate(rulesEngineProperties) {
-            for (var ruleId in rulesEngineProperties) {
-                var ruleStatus = rulesEngineProperties[ruleId].status;
-
-                rules[ruleId] = ruleStatus;
-            }
-
-            updateRulesTable();
+        function wrapInCloudEvent(source, dataObject) {
+            return {
+                specversion: "1.0",
+                type: "event_tester",
+                source: source,
+                id: generateUUID(),
+                time: new Date().toISOString(),
+                datacontenttype: "application/json",
+                data: dataObject
+            };
         }
 
-        function updateRulesTable() {
-            var table = document.getElementById('dataTable');
-            var tbody = table.getElementsByTagName('tbody')[0];
-            tbody.innerHTML = '';
+        function generateUUID() {
+            // Generate 16 random bytes
+            const arr = new Uint8Array(16);
+            window.crypto.getRandomValues(arr);
 
-            for (var ruleId in rules) {
-                var row = tbody.insertRow();
-                var cell1 = row.insertCell(0);
-                var cell2 = row.insertCell(1);
+            // Adjust certain bits according to RFC 4122, section 4.4, to indicate version and variant
+            arr[6] = (arr[6] & 0x0f) | 0x40; // Version 4 (random)
+            arr[8] = (arr[8] & 0x3f) | 0x80; // Variant 10xx (RFC 4122)
 
-                cell1.textContent = ruleId;
-                cell2.textContent = rules[ruleId];
-            }
+            // Convert to hexadecimal format
+            const uuid = Array.from(arr).map(byte => byte.toString(16).padStart(2, '0')).join('');
+
+            // Insert dashes to match UUID format
+            return `${uuid.substring(0, 8)}-${uuid.substring(8, 12)}-${uuid.substring(12, 16)}-${uuid.substring(16, 20)}-${uuid.substring(20)}`;
         }
 
-        var demoNodeId = null;
-        var posInDemoRules = 0;
-        var demoRulesUpdatePayloads = {
-            "overtemperature": {
-                "status": "active"
-            },
-            "overvoltage": {
-                "status": "inactive"
-            },
-            "big bad": {
-                "status": "active"
-            }
-        };
+        function onBindRespone(correlationId, response) {
+            var data = response.data;
 
-        function demoRulesEngineUpdate() {
-            if (!demoNodeId) {
+            if (!data) {
+                console.log(`Bind operation failed ${correlationId} - ${JSON.stringify(response)}`);
                 return;
             }
 
-            var ruleId = Object.keys(demoRulesUpdatePayloads)[posInDemoRules];
-            var rulePayload = demoRulesUpdatePayloads[ruleId];
-
-            if (rulePayload.status === "active") {
-                demoRulesUpdatePayloads[ruleId].status = "inactive";
+            if (data.operationSucceeded) {
+                console.log(`BindResponse: Bind operation succeeded ${correlationId}`);
             } else {
-                demoRulesUpdatePayloads[ruleId].status = "active";
+                console.log(`BindResponse: Bind operation failed ${correlationId} - ${JSON.stringify(data)}`);
+            }
+        }
+
+        function onBoundEvent(tenantId, nodeId, featureName, event) {
+            var data = event.data;
+            if (!data) {
+                console.log(`Unexpected bound event format: ${JSON.stringify(event)}`);
+                return;
             }
 
-            var event = {
-                "features": {
-                    "rulesEngine": {
-                        "properties": {
-                            [ruleId]: rulePayload
-                        }
-                    }
-                }
-            };
+            var leasedUntil = new Date(data.leasedUntil);
+            var leasedUntilStr = leasedUntil.toLocaleString();
 
-            client.send('shadow/' + demoNodeId + '/deviceStateChange', JSON.stringify(event));
+            var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
+            // Check if the feature is already in the table
+            var existingRow = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
+            if (existingRow) {
+                console.log(`Bound: Updating known feature's lease expiration: ${featureName} - ${leasedUntilStr}`);
+                existingRow.cells[2].textContent = leasedUntilStr;
+            } else {
+                var row = table.insertRow(0);
+                var nameCell = row.insertCell(0);
+                var stateCell = row.insertCell(1);
+                var leasedUntilCell = row.insertCell(2);
+                var actionsCell = row.insertCell(3);
 
-            posInDemoRules = (posInDemoRules + 1) % Object.keys(demoRulesUpdatePayloads).length;
+                console.log(`Bound: Creating new row for feature: ${featureName}`);
+
+                nameCell.textContent = featureName;
+                stateCell.textContent = '-';
+                leasedUntilCell.textContent = leasedUntilStr;
+
+                var unbindButton = document.createElement('button');
+                unbindButton.textContent = 'Unbind';
+                unbindButton.classList.add('btn', 'btn-danger');
+                actionsCell.appendChild(unbindButton);
+            }
         }
+
+        function onUnboundEvent(tenantId, nodeId, featureName, event) {
+            var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
+            var row = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
+
+            if (row) {
+                console.log(`Unbound: ${featureName}`);
+                table.deleteRow(row.rowIndex);
+            } else {
+                console.log(`Unbound: Received unbound event for unknown feature: ${featureName}`);
+            }
+        }
+
     </script>
 </body>
 
