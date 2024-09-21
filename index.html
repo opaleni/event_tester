@@ -341,6 +341,26 @@
             }
         }
 
+        function onModifiedEvent(tenantId, nodeId, featureName, event) {
+            var data = event.data;
+            if (!data) {
+                console.log(`Unexpected modified event format: ${JSON.stringify(event)}`);
+                return;
+            }
+
+            var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
+            var row = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
+
+            if (row) {
+                console.log(`Modified: ${featureName}`);
+
+                var stateCell = row.cells[1];
+                stateCell.textContent = data;
+            } else {
+                console.log(`Modified: Received modified event for unknown feature: ${featureName}`);
+            }
+        }
+
     </script>
 </body>
 
