@@ -158,8 +158,8 @@
             handleIncomingEvent(message);
         }
 
-        document.getElementById('bind').addEventListener('click', bind);
-        function bind() {
+        document.getElementById('bind').addEventListener('click', bindButtonHandler);
+        function bindButtonHandler() {
             var tenantId = document.getElementById('tenantId').value;
             if (!tenantId) {
                 alert('Please enter a tenant ID');
@@ -178,16 +178,7 @@
                 return;
             }
 
-            var bindPayload = {
-                "correlationId": generateUUID(),
-            };
-
-            var cloudEventPayload = wrapInCloudEvent('opaleni_event_tester', bindPayload);
-
-            expectedResponseHandlers[bindPayload.correlationId] = onBindRespone;
-
-            var bindTopic = `cloud2cloud/${tenantId}/shadow/v0/${nodeId}/${featureName}/commands/bind`;
-            publishEvent(bindTopic, JSON.stringify(cloudEventPayload));
+            bind(tenantId, nodeId, featureName);
         }
 
         document.getElementById('togglePrettyPrint').addEventListener('click', togglePrettyPrint);
@@ -277,6 +268,19 @@
             return `${uuid.substring(0, 8)}-${uuid.substring(8, 12)}-${uuid.substring(12, 16)}-${uuid.substring(16, 20)}-${uuid.substring(20)}`;
         }
 
+        function bind(tenantId, nodeId, featureName) {
+            var bindPayload = {
+                "correlationId": generateUUID(),
+            };
+
+            var cloudEventPayload = wrapInCloudEvent('opaleni_event_tester', bindPayload);
+
+            expectedResponseHandlers[bindPayload.correlationId] = onBindRespone;
+
+            var bindTopic = `cloud2cloud/${tenantId}/shadow/v0/${nodeId}/${featureName}/commands/bind`;
+            publishEvent(bindTopic, JSON.stringify(cloudEventPayload));
+        }
+
         function retrieve(tenantId, nodeId, featureName) {
             var retrievePayload = {
                 "correlationId": generateUUID(),
@@ -300,6 +304,7 @@
 
             if (data.operationSucceeded) {
                 console.log(`BindResponse: Bind operation succeeded ${correlationId}`);
+                // start rebind timer
             } else {
                 console.log(`BindResponse: Bind operation failed ${correlationId} - ${JSON.stringify(data)}`);
             }
@@ -336,6 +341,12 @@
             var leasedUntil = new Date(data.leasedUntil);
             var leasedUntilStr = leasedUntil.toLocaleString();
 
+            // Start rebind timer to 3 seconds before lease expiration
+            var rebindTimer = setTimeout(() => {
+                console.log(`Rebinding feature: ${featureName}`);
+                bind(tenantId, nodeId, featureName);
+            }, leasedUntil - Date.now() - 3000);
+
             var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
             // Check if the feature is already in the table
             var existingRow = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
@@ -360,8 +371,16 @@
                 unbindButton.classList.add('btn', 'btn-danger');
                 actionsCell.appendChild(unbindButton);
 
+                // Add a handler to stop rebinding the feature
+                unbindButton.onclick = function () {
+                    console.log(`Stopping rebind timer for feature: ${featureName}`);
+                    clearTimeout(rebindTimer);
+                };
+
                 retrieve(tenantId, nodeId, featureName);
             }
+
+
         }
 
         function onUnboundEvent(tenantId, nodeId, featureName, event) {
