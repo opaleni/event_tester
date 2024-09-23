@@ -86,7 +86,6 @@
         var prettyPrintEventLog = false;
 
         document.getElementById('connect').addEventListener('click', connect);
-
         function connect() {
             var broker = document.getElementById('broker').value;
             var port = Number(document.getElementById('port').value);
@@ -230,7 +229,7 @@
                 var correlationId = matches[5];
 
                 if (expectedResponseHandlers[correlationId]) {
-                    expectedResponseHandlers[correlationId](correlationId, event);
+                    expectedResponseHandlers[correlationId](tenantId, nodeId, featureName, correlationId, event);
                     delete expectedResponseHandlers[correlationId];
                 }
             }
@@ -278,11 +277,24 @@
             return `${uuid.substring(0, 8)}-${uuid.substring(8, 12)}-${uuid.substring(12, 16)}-${uuid.substring(16, 20)}-${uuid.substring(20)}`;
         }
 
-        function onBindRespone(correlationId, response) {
+        function retrieve(tenantId, nodeId, featureName) {
+            var retrievePayload = {
+                "correlationId": generateUUID(),
+            };
+
+            var cloudEventPayload = wrapInCloudEvent('opaleni_event_tester', retrievePayload);
+
+            expectedResponseHandlers[retrievePayload.correlationId] = onRetrieveRespone;
+
+            var retrieveTopic = `cloud2cloud/${tenantId}/shadow/v0/${nodeId}/${featureName}/commands/retrieve`;
+            publishEvent(retrieveTopic, JSON.stringify(cloudEventPayload));
+        }
+
+        function onBindRespone(tenantId, nodeId, featureName, correlationId, response) {
             var data = response.data;
 
             if (!data) {
-                console.log(`Bind operation failed ${correlationId} - ${JSON.stringify(response)}`);
+                console.log(`Unexpected bind response format: ${JSON.stringify(response)}`);
                 return;
             }
 
@@ -290,6 +302,27 @@
                 console.log(`BindResponse: Bind operation succeeded ${correlationId}`);
             } else {
                 console.log(`BindResponse: Bind operation failed ${correlationId} - ${JSON.stringify(data)}`);
+            }
+        }
+
+        function onRetrieveRespone(tenantId, nodeId, featureName, correlationId, response) {
+            var data = response.data;
+
+            if (!data) {
+                console.log(`Unexpected retrieve response format: ${JSON.stringify(response)}`);
+                return;
+            }
+
+            console.log(`RetrieveResponse: ${JSON.stringify(data)}`);
+            // Update the table with the retrieved data
+            var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
+            var row = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
+
+            if (row) {
+                console.log(`Retrieve: Updating known feature's state: ${featureName} - ${data}`);
+                row.cells[1].textContent = data;
+            } else {
+                console.log(`Retrieve: Received retrieve response for unknown feature: ${featureName}`);
             }
         }
 
@@ -326,6 +359,8 @@
                 unbindButton.textContent = 'Unbind';
                 unbindButton.classList.add('btn', 'btn-danger');
                 actionsCell.appendChild(unbindButton);
+
+                retrieve(tenantId, nodeId, featureName);
             }
         }
 
