@@ -325,7 +325,7 @@
 
             if (row) {
                 console.log(`Retrieve: Updating known feature's state: ${featureName} - ${data}`);
-                row.cells[1].textContent = data;
+                row.cells[1].textContent = data["feature"]["properties"]["status"];
             } else {
                 console.log(`Retrieve: Received retrieve response for unknown feature: ${featureName}`);
             }
