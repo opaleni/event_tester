@@ -341,11 +341,6 @@
             var leasedUntil = new Date(data.leasedUntil);
             var leasedUntilStr = leasedUntil.toLocaleString();
 
-            // Start rebind timer to 3 seconds before lease expiration
-            var rebindTimer = setTimeout(() => {
-                console.log(`Rebinding feature: ${featureName}`);
-                bind(tenantId, nodeId, featureName);
-            }, leasedUntil - Date.now() - 3000);
 
             var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
             // Check if the feature is already in the table
@@ -366,13 +361,21 @@
                 stateCell.textContent = '-';
                 leasedUntilCell.textContent = leasedUntilStr;
 
-                var unbindButton = document.createElement('button');
-                unbindButton.textContent = 'Unbind';
-                unbindButton.classList.add('btn', 'btn-danger');
-                actionsCell.appendChild(unbindButton);
+                // Start rebind timer to 3 seconds before lease expiration
+                var rebindTimer = setTimeout(() => {
+                    console.log(`Rebinding feature: ${featureName}`);
+                    bind(tenantId, nodeId, featureName);
+                }, leasedUntil - Date.now() - 3000);
+
+                console.log("timeout: ", rebindTimer);
+
+                var stopRebindButton = document.createElement('button');
+                stopRebindButton.textContent = 'Stop rebind';
+                stopRebindButton.classList.add('btn', 'btn-danger');
+                actionsCell.appendChild(stopRebindButton);
 
                 // Add a handler to stop rebinding the feature
-                unbindButton.onclick = function () {
+                stopRebindButton.onclick = function () {
                     console.log(`Stopping rebind timer for feature: ${featureName}`);
                     clearTimeout(rebindTimer);
                 };
