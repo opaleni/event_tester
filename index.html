@@ -376,12 +376,15 @@
 
                 // Add a handler to stop rebinding the feature
                 stopRebindButton.onclick = function () {
+                    var existingRow = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
+                    existingRow.remove();
                     console.log(`Stopping rebind timer for feature: ${featureName}`);
                     clearTimeout(rebindTimer);
                 };
 
                 retrieve(tenantId, nodeId, featureName);
             }
+
 
 
         }
