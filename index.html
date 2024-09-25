@@ -84,6 +84,7 @@
         var client;
         var expectedResponseHandlers = {};
         var prettyPrintEventLog = false;
+        var rebindTimerHandles = {};
 
         document.getElementById('connect').addEventListener('click', connect);
         function connect() {
@@ -325,7 +326,11 @@
 
             if (row) {
                 console.log(`Retrieve: Updating known feature's state: ${featureName} - ${data}`);
-                row.cells[1].textContent = data["feature"]["properties"]["status"];
+                if (data["feature"] && data["feature"]["properties"] && data["feature"]["properties"]["status"]) {
+                    row.cells[1].textContent = data["feature"]["properties"]["status"];
+                } else {
+                    row.cells[1].textContent = "N/A";
+                }
             } else {
                 console.log(`Retrieve: Received retrieve response for unknown feature: ${featureName}`);
             }
@@ -341,6 +346,16 @@
             var leasedUntil = new Date(data.leasedUntil);
             var leasedUntilStr = leasedUntil.toLocaleString();
 
+            if (rebindTimerHandles[featureName]) {
+                clearTimeout(rebindTimerHandles[featureName]);
+                delete rebindTimerHandles[featureName];
+            }
+
+            // Start rebind timer to 3 seconds before lease expiration
+            rebindTimerHandles[featureName] = setTimeout(() => {
+                console.log(`Rebinding feature: ${featureName}`);
+                bind(tenantId, nodeId, featureName);
+            }, leasedUntil - Date.now() - 3000);
 
             var table = document.getElementById('dataTable').getElementsByTagName('tbody')[0];
             // Check if the feature is already in the table
@@ -361,12 +376,6 @@
                 stateCell.textContent = '-';
                 leasedUntilCell.textContent = leasedUntilStr;
 
-                // Start rebind timer to 3 seconds before lease expiration
-                var rebindTimer = setTimeout(() => {
-                    console.log(`Rebinding feature: ${featureName}`);
-                    bind(tenantId, nodeId, featureName);
-                }, leasedUntil - Date.now() - 3000);
-
                 console.log("timeout: ", rebindTimer);
 
                 var stopRebindButton = document.createElement('button');
@@ -379,14 +388,11 @@
                     var existingRow = Array.from(table.rows).find(row => row.cells[0].textContent === featureName);
                     existingRow.remove();
                     console.log(`Stopping rebind timer for feature: ${featureName}`);
-                    clearTimeout(rebindTimer);
+                    clearTimeout(rebindTimerHandles[featureName]);
                 };
 
                 retrieve(tenantId, nodeId, featureName);
             }
-
-
-
         }
 
         function onUnboundEvent(tenantId, nodeId, featureName, event) {
