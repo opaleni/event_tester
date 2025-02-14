@@ -37,22 +37,18 @@
         <hr>
 
         <div class="row mb-3">
-            <div class="col">
-                <input type="text" id="tenantId" class="form-control" placeholder="Tenant ID" value="tenant">
-            </div>
-            <div class="col">
-                <input type="text" id="nodeId" class="form-control" placeholder="Node ID" value="test">
-            </div>
-            <div class="col">
-                <input type="text" id="featureName" class="form-control" placeholder="Feature Name" value="dummy-feature">
-            </div>
-            <div class="col">
+            <div class="col d-flex justify-content-start">
+                <input type="text" id="tenantId" class="form-control me-2" placeholder="Tenant ID" value="tenant">
+                <input type="text" id="nodeId" class="form-control me-2" placeholder="Node ID" value="test">
+                <input type="text" id="featureName" class="form-control me-2" placeholder="Feature Name" value="dummy-feature">
                 <button id="bind" class="btn btn-secondary">Bind</button>
             </div>
-            <div class="col text-right">
+            <div class="col d-flex justify-content-end">
+                <button id="clearEventLog" class="btn btn-secondary me-2">Clear Log</button>
                 <button id="togglePrettyPrint" class="btn btn-secondary">Enable Pretty Print</button>
             </div>
         </div>
+
 
         <hr>
 
@@ -180,6 +176,11 @@
             }
 
             bind(tenantId, nodeId, featureName);
+        }
+
+        document.getElementById('clearEventLog').addEventListener('click', clearEventLog);
+        function clearEventLog() {
+            document.getElementById('eventLog').value = '';
         }
 
         document.getElementById('togglePrettyPrint').addEventListener('click', togglePrettyPrint);
