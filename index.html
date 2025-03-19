@@ -238,6 +238,8 @@
                     onBoundEvent(tenantId, nodeId, featureName, event);
                 } else if (eventType === 'unbound') {
                     onUnboundEvent(tenantId, nodeId, featureName, event);
+                } else if (eventType === 'modified') {
+                    onModifiedEvent(tenantId, nodeId, featureName, event);
                 }
             }
         }
@@ -419,8 +421,11 @@
             if (row) {
                 console.log(`Modified: ${featureName}`);
 
-                var stateCell = row.cells[1];
-                stateCell.textContent = data;
+                if (data["properties"] && data["properties"]["status"]) {
+                    row.cells[1].textContent = data["properties"]["status"];
+                } else {
+                    row.cells[1].textContent = "N/A";
+                }
             } else {
                 console.log(`Modified: Received modified event for unknown feature: ${featureName}`);
             }
